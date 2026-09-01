@@ -3,7 +3,6 @@ import datetime
 import random
 import json
 import paho.mqtt.client as mqtt
-from paho.mqtt.enums import CallbackAPIVersion as mqtt_version
 
 """
  Módulo básico de simulación de telemetría IoT para el cultivo de tomate (_Solanum lycopersicum_).
@@ -25,7 +24,7 @@ def on_publish(client, userdata, mid, reason_code=None, properties=None):
     pass #Confirmación de la recepción del paquete por parte del BROKER.
 
 #Conexión del cliente.
-client = mqtt.Client(callback_api_version=mqtt_version.VERSION2)
+client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 client.on_connect = on_connect
 client.on_publish = on_publish
 
@@ -34,7 +33,7 @@ client.loop_start()
 print("Conectando al servidor... Espere.")
 time.sleep(1) 
 
-print("Inicializando simulación de invernadero, para detener precione [Ctrl + C]")
+print("Inicializando simulación de invernadero, para detener presione [Ctrl + C]")
 print("-"*50)
 print()
 
