@@ -22,7 +22,7 @@ def on_message(client, userdata, msg):
         print(f"Se recibió el payload JSON:\n{payload}")
         print("-"*50)
     except Exception as e:
-        print(f"Debido al error: {e} no se pudo procesar el mensaje")
+        print(f"Debido al error: {e} no se pudo procesar el mensaje.")
 
 #Conexión del cliente.
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)

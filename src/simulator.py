@@ -13,12 +13,12 @@ BROKER = "broker.hivemq.com"
 PORT = 1883
 TOPIC = "invernadero/sensores/GH_TOMATO_01"
 
-#Callbaks de control de conexión y publicación.(Firma API v2)
+#Callbacks de control de conexión y publicación.(Firma API v2)
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         print(f"Conectado con éxito al broker MQTT: {BROKER}.")
     else:
-        print("Error de conexión. Código de retorno: {rc}.")
+        print(f"Error de conexión. Código de retorno: {rc}.")
 
 def on_publish(client, userdata, mid, reason_code=None, properties=None):
     pass #Confirmación de la recepción del paquete por parte del BROKER.
@@ -65,4 +65,4 @@ except KeyboardInterrupt:
 finally:
     client.loop_stop()
     client.disconnect()
-    print("Se cerró la conección con el servidor.")
+    print("Se cerró la conexión con el servidor.")

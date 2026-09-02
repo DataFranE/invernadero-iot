@@ -30,7 +30,7 @@ Este documento detalla los hitos técnicos y la hoja de ruta planificada para tr
 * **Hitos:**
   - [ ] Rediseño Orientado a Objetos: Clase base `Sensor` y subclases específicas (`TemperatureSensor`, `SoilHumiditySensor`, etc.).
   - [ ] Implementación de concurrencia (`threading` o `asyncio`) para ejecutar múltiples hilos/instancias de nodos en paralelo.
-  - [ ] Descoplamiento de tópicos por tipo de métrica o sub-zona del invernadero.
+  - [ ] Desacoplamiento de tópicos por tipo de métrica o sub-zona del invernadero.
   - [ ] Estandarización de cargas útiles individuales y metadatos de calidad de señal (ej. nivel de batería, RSSI).
 
 ---
