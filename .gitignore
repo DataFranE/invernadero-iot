@@ -10,3 +10,4 @@ __pycache__/
 # Archivos de configuración local y datos
 .env
 *.db
+*.log
