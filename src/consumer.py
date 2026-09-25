@@ -7,9 +7,9 @@ Se suscribe a los tópicos MQTT del broker para recibir las lecturas enviadas po
 """
 
 #Configuración de la red MQTT
-BROKER = "broker.hivemq.com"
+BROKER = "localhost"
 PORT = 1883
-TOPIC = "invernadero/sensores/GH_TOMATO_01"
+TOPIC = "invernadero/sensores/#"
 
 #Callback de control de conexión y recepción de mensaje.
 def on_connect(client, userdata, flags, rc, properties=None):

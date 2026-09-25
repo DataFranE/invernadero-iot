@@ -9,7 +9,7 @@ import paho.mqtt.client as mqtt
 Simula las variables consideradas críticas en su rango probable de variación.
  """
 #Configuración de la red MQTT.
-BROKER = "broker.hivemq.com"
+BROKER = "localhost"
 PORT = 1883
 TOPIC = "invernadero/sensores/GH_TOMATO_01"
 
