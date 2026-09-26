@@ -7,6 +7,7 @@ Consumidor MQTT para la telemetría del Invernadero IoT.
 Se suscribe a los tópicos MQTT del broker para recibir las lecturas enviadas por los sensores, deserializar las cargas útiles JSON y procesar los eventos entrantes.
 """
 
+#Configuración general del registro de eventos.
 logging.basicConfig(
     level=logging.DEBUG, #Nota personal: DEBUG para poder ver salidas en terminal, recordar investigar método dinámico...
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -21,10 +22,10 @@ TOPIC = "invernadero/sensores/#"
 #Callback de control de conexión y recepción de mensaje.
 def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
-    #    print(f"Conectado al broker MQTT: {BROKER}.\nSuscribiendo al tópico.")
         logging.info("Conectado al broker EMQX local(%s:%d)", BROKER, PORT)
         client.subscribe(TOPIC)
         logging.info("Suscripto al patrón de tópicos: %s", TOPIC)
+        print("-"*50)
     else:
         logging.error("Error de conexión al broker MQTT. Código de retorno: %s", rc)
 
@@ -32,32 +33,32 @@ def on_message(client, userdata, msg):
     try:
         payload = json.loads(msg.payload.decode("utf-8"))
         sensor_id = payload.get("sensor_id", "DESCONOCIDO")
-       # print(f"Se recibió el payload JSON:\n{payload}")
         logging.info("Mensaje recibido desde el tópico '%s' [Sensor: %s]", msg.topic, sensor_id)
         logging.debug("Payload completo: %s", payload)
-        # print("-"*50)
+        print("-"*50)
+
     except json.JSONDecodeError:
         logging.error("Error al deserealizar el JSON desde el tópico: %s", msg.topic)
     except Exception:
         logging.exception("Excepción no esperada al procesar mensaje")
-      #  print(f"Debido al error: {e} no se pudo procesar el mensaje.")
-
-#Conexión del cliente.
-client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-client.on_connect = on_connect
-client.on_message = on_message
 
 
+def main():
+    #Conexión del cliente.
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.on_connect = on_connect
+    client.on_message = on_message
 
+    try:
+        logging.info("Iniciando servicio Consumidor de Telemetría...")
+        client.connect(BROKER, PORT, 60)
+        print("... Presionar [Ctrl + C] para detener.")
+        client.loop_forever()
+    except KeyboardInterrupt:
+        logging.info("Deteniendo el consumidor debido a una interrupción del usuario...")
+    finally:
+        client.disconnect()
+        logging.info("Conexión con el broker MQTT cerrada.")
 
-try:
-    logging.info("Iniciando servicio Consumidor de Telemetría...")
-    client.connect(BROKER, PORT, 60)
-   # print("Escuchando los mensajes. Presione [Ctrl + C] para detener.")
-    client.loop_forever()
-except KeyboardInterrupt:
-    logging.info("Deteniendo el consumidor debido a una interrupción del usuario...")
-finally:
-    #print("\nDeteniendo el consumidor.")
-    client.disconnect()
-    logging.info("Conexiń con el broker MQTT cerrada.")
+if __name__ == "__main__":
+    main()
