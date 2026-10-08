@@ -17,11 +17,11 @@ Este documento detalla los hitos técnicos y la hoja de ruta planificada para tr
 ## Fase 2: Infraestructura Local, Persistencia e Ingesta Eficiente
 * **Objetivo:** Contenerizar el stack técnico, migrar a un broker dedicado y asegurar la ingesta de series temporales en base de datos.
 * **Hitos:**
-  - [ ] Creación del entorno contenerizado utilizando Docker y `docker-compose.yml`.
-  - [ ] Despliegue de broker **EMQX** local para eliminar dependencia de brokers públicos y habilitar monitoreo administrativo.
-  - [ ] Despliegue de **TimescaleDB** (PostgreSQL) con extensión Time-Series.
-  - [ ] Diseño del DDL/SQL de inicialización: creación de tablas relacionales, conversión a *Hypertable* e implementación de políticas de **compresión nativa de datos**.
-  - [ ] Reescritura del consumidor en Python para persistencia en BD utilizando **procesamiento en lote (batch processing)** con `executemany`.
+  - [x] Creación del entorno contenerizado utilizando Docker y `docker-compose.yml`.
+  - [x] Despliegue de broker **EMQX** local para eliminar dependencia de brokers públicos y habilitar monitoreo administrativo.
+  - [x] Despliegue de **TimescaleDB** (PostgreSQL) con extensión Time-Series.
+  - [x] Diseño del DDL/SQL de inicialización: creación de tablas relacionales, conversión a *Hypertable* e implementación de políticas de **compresión nativa de datos**.
+  - [x] Reescritura del consumidor en Python para persistencia en BD utilizando **procesamiento en lote (batch processing)** con `executemany`.
 
 ---
 
