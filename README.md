@@ -1,91 +1,156 @@
-# Invernadero IoT - Pipeline de Datos (MVP)
+# Invernadero IoT - Pipeline de Datos de Telemetría
 
-Simulador y sistema de adquisición de datos IoT de extremo a extremo para un invernadero inteligente. Este repositorio documenta la evolución arquitectónica del proyecto, comenzando desde un Producto Mínimo Viable (MVP) monolítico hasta una arquitectura robusta orientada a producción.
+![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python)
+![Docker](https://img.shields.io/badge/Docker-Containers-blue?logo=docker)
+![EMQX](https://img.shields.io/badge/MQTT-EMQX_v5-brightgreen?logo=eclipse-mosquitto)
+![TimescaleDB](https://img.shields.io/badge/Database-TimescaleDB-orange?logo=postgresql)
 
-> [!IMPORTANT] 
-> Debido a la numerosa cantidad de variables que es posible monitorear dentro de un invernadero, se eligió al tomate ( _Solanum lycopersicum_ ) por ser una de las especies más representativas del cultivo bajo cubierta para delimitar la simulación a las variables críticas, **en sus rangos probables no en los óptimos**, para esta especie en particular.
-> **Es posible que en fases posteriores de desarrollo se opte por modificar las variables analizadas o el cultivo de referencia.**
+Sistema de adquisición y persistencia de telemetría IoT de extremo a extremo para un invernadero inteligente. Este proyecto documenta la evolución arquitectónica de un pipeline de datos AgTech, desde un prototipo de comunicación elemental hasta una infraestructura contenerizada escalable con ingesta en lote y modelado de series temporales.
 
-## Arquitectura actual (MVP)
+> [!IMPORTANT]
+> Para acotar el alcance de la simulación a métricas agronómicas reales, se toma como referencia de cultivo al tomate (_Solanum lycopersicum_). Las variables monitoreadas se generan dentro de rangos agrofisiológicos probables y de estrés para esta especie.
 
-1. **Simulador (src/simulator.py):** Genera telemetría sintética de variables ambientales clave (temperatura, humedad relativa, humedad del suelo y radiación PAR) respetando los rangos máximos de variación admisibles y emite la carga útil (_payload_) en formato JSON, simulando el comportamiento de sensores físicos.
-2. **Broker MQTT (broker.hivemq.com):** Gestiona la publicación/suscripción de mensajes mediante tópicos jerárquicos (invernadero/sensores/GH_TOMATO_01).
-3. **Consumidor (src/consumer.py):** Se suscribe al tópico en tiempo real, captura los paquetes de red, valida el formato y deserializa la carga JSON para su posterior procesamiento.
+---
 
-## Tecnología y herramientas
+## Arquitectura del Pipeline
 
-* **Lenguaje:** Python 3.12+
-* **Protocolo de comunicación:** MQTT v5 / v3.1.1 (vía paho-mqtt v2.x)
-* **Broker de pruebas:** HiveMQ
-* **Formato de intercambio:** JSON
-* **Control de versiones:** Git
+El sistema implementa una arquitectura desacoplada basada en eventos, utilizando el patrón **Publicador/Suscriptor (Pub/Sub)** sobre MQTT y persistencia orientada a series temporales en **TimescaleDB**.
 
-## Estructura del proyecto
+```text
+┌────────────────────────┐      MQTT (JSON)      ┌────────────────────────┐
+│  Simulador de Sensores │ ───────────────────>  │   Broker EMQX Local    │
+│   (src/simulator.py)   │  tópico:              │  (Contenedor Docker)   │
+└────────────────────────┘  invernadero/sensores/│   Puerto: 1883         │
+                                                 └───────────┬────────────┘
+                                                             │
+                                                    Suscripción MQTT
+                                                             │
+                                                             v
+┌────────────────────────┐   Batch Insert (psycopg3) ┌────────────────────────┐
+│      TimescaleDB       │ <──────────────────────── │   Consumidor Python    │
+│  (Hypertable/Postgres) │  - Auto-Descubrimiento    │    (src/consumer.py)   │
+│  - Compresión nativa   │  - Capa Anti-Corrupción   │  - Buffer con lote 10  │
+└────────────────────────┘                           └────────────────────────┘
+```
+
+---
+
+## Componentes y Flujo de Datos
+
+1. **Simulador de Telemetría (`src/simulator.py`)**:
+   Genera eventos JSON en tiempo real con datos de temperatura, humedad relativa, humedad de suelo y radiación PAR.
+2. **Broker MQTT (EMQX v5)**:
+   Servidor de mensajería local desplegado en Docker que gestiona el enrutamiento de tópicos bajo la jerarquía `invernadero/sensores/#`.
+3. **Consumidor y Capa Anti-Corrupción (`src/consumer.py`)**:
+   * **Capa Anti-Corrupción (ACL)**: Sanea, valida y adapta la estructura JSON entrante a tipos de datos compatibles con la base de datos.
+   * **Auto-Registro de Dispositivos (Auto-Discovery)**: Registra dinámicamente dispositivos desconocidos en la tabla relacional `dispositivos` sin interrumpir la ingesta.
+   * **Procesamiento por Lotes (Batching)**: Acumula registros en memoria y ejecuta inserciones eficientes (`executemany`) al alcanzar el tamaño de lote configurado o un tiempo límite de inactividad.
+4. **Base de Datos de Series Temporales (TimescaleDB)**:
+   * **Esquema Relacional / Temporal**: Combina metadatos de dispositivos con métricas de sensores.
+   * **Desacoplamiento de Latencia**: Registra la marca temporal en origen (`fecha_hora`) junto con el momento exacto de procesamiento (`fecha_hora_ingesta`) para el cálculo de latencias de red.
+   * **Compresión Nativa**: Políticas de compresión automatizadas para optimizar el almacenamiento de datos históricos.
+
+---
+
+## Stack Tecnológico
+
+* **Lenguaje de Programación**: Python 3.12+
+* **Protocolo de Comunicación**: MQTT v5 / v3.1.1 (`paho-mqtt` v2.x)
+* **Broker MQTT**: EMQX Enterprise/Community (vía Docker)
+* **Base de Datos**: TimescaleDB / PostgreSQL 16 (vía Docker)
+* **Controlador DB**: `psycopg3` (PostgreSQL adapter for Python)
+* **Contenerización**: Docker & Docker Compose
+* **Control de Versiones**: Git
+
+---
+
+## Estructura del Proyecto
 
 ```text
 invernadero-iot/
-├── README.md
-├── ROADMAP.md
-├── requirements.txt   # Dependencias del proyecto
+├── docker-compose.yml   # Orquestación de contenedores (EMQX + TimescaleDB)
+├── .env.example         # Plantilla de variables de entorno
+├── requirements.txt     # Dependencias de Python
+├── README.md            # Documentación del proyecto
+├── ROADMAP.md           # Hoja de ruta técnica detallada
+├── scripts/
+│   └── init.db.sql      # DDL de inicialización, Hypertables y compresión
 └── src/
-    ├── simulator.py       # Simula y publica lecturas de sensores
-    └── consumer.py    # Escucha el broker MQTT, captura, valida y deserializa la carga
+    ├── simulator.py     # Simula y publica lecturas de sensores
+    └── consumer.py      # Consumidor con Batching, Auto-Descubrimiento y ACL
 ```
 
-## Instalación y pruebas
+---
 
-1. Clonar el repositorio y configurar el entorno
+## Guía de Instalación y Ejecución
+
+### 1. Clonar el repositorio y configurar el entorno Python
 
 ```bash
-git clone [https://github.com/DataFranE/invernadero-iot.git](https://github.com/DataFranE/invernadero-iot.git)
+git clone https://github.com/DataFranE/invernadero-iot.git
 cd invernadero-iot
+
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
-2. Iniciar el consumidor
-En una terminal:
+
+### 2. Desplegar la Infraestructura en Docker
+
+Asegúrate de tener Docker Engine y Docker Compose instalados. Copia la plantilla de variables de entorno y levanta los servicios:
+
+```bash
+cp .env.example .env
+docker-compose up -d
+```
+
+Esto desplegará:
+* **EMQX**: Accesible en `localhost:1883` (Dashboard web en `http://localhost:18083`).
+* **TimescaleDB**: Accesible en `localhost:5432` con la base de datos `invernadero_db` inicializada.
+
+### 3. Iniciar el Consumidor de Datos
+
+En una terminal conectada al entorno virtual:
 
 ```bash
 python3 src/consumer.py
 ```
-3. Iniciar el simulador
-En otra terminal:
+
+### 4. Iniciar el Simulador de Telemetría
+
+En otra ventana de terminal:
 
 ```bash
 python3 src/simulator.py
 ```
-> [!NOTE] 
-> **Estructura de la carga útil:** El mensaje transmitido por el simulador a través del broker y recibido por el consumidor responde a la siguiente estructura tipo, la que debería ver impresa tanto en la terminal del simulador y del consumidor y le permitirá corroborar el correcto funcionamiento del sistema.
 
-```json
-{
-  "sensor_id": "GH_TOMATO_01",
-  "timestamp": "2026-08-31 20:31:34",
-  "status": "active",
-  "telemetry": {
-    "temperature": 21.45,
-    "relative_humidity": 65,
-    "soil_humidity": 42,
-    "par_radiation": 1200
-  }
-}
+---
+
+## Verificación de Persistencia en TimescaleDB
+
+Para comprobar el flujo completo de ingesta, puedes realizar una consulta SQL directa al contenedor de TimescaleDB:
+
+```bash
+docker exec -it timescaledb_invernadero psql -U agtech_user -d invernadero_db -P pager=off -c "
+SELECT fecha_hora, fecha_hora_ingesta, dispositivo_id, temperatura, humedad_relativa, humedad_suelo, radiacion_par 
+FROM telemetria_sensores 
+ORDER BY fecha_hora DESC 
+LIMIT 10;
+"
 ```
-## Roadmap de escalabilidad (Próximas mejoras)
 
-- [x] Fase 1: MVP de Telemetría IoT (Completado).
-- [ ] Fase 2: Infraestructura Local, Persistencia e Ingesta Eficiente.
-- [ ] Fase 3: Refactorización POO & Simulación Concurrente.
-- [ ] Fase 4: Observabilidad y Visualización en Tiempo Real.
+---
 
-> [!NOTE] 
-> Se encuentra aún en evaluación la posibilidad de agregar una 5ta fase de desarrollo...
+## Hoja de Ruta (Roadmap)
 
-- [ ] Fase 5: Bucle de Control y Actuadores (Advanced AgTech).
+- [x] **Fase 1**: Prototipo Base de Telemetría IoT (Comunicación Pub/Sub vía MQTT).
+- [x] **Fase 2**: Infraestructura Local, Persistencia e Ingesta Eficiente (Docker, EMQX, TimescaleDB, Batching & Auto-Descubrimiento).
+- [ ] **Fase 3**: Refactorización POO & Simulación Concurrente (Modelos de clases para sensores y nodos concurrentes).
+- [ ] **Fase 4**: Observabilidad y Visualización en Tiempo Real (Dashboards en Grafana para métricas de microclima).
+- [ ] **Fase 5**: Bucle de Control y Actuadores (Simulación de actuadores y reglas de automatización AgTech).
 
-> [!NOTE]
-> En el archivo **ROADMAP.md** puede observar un detalle de los hitos a alcanzar en cada una de las fases de desarrollo.
+---
 
-## Contribuciones y aprendizaje
+## Contribuciones y Contexto
 
-Este es mi primer proyecto técnico, el cual busca aplicar criterio electromecánico y agronómico en la búsqueda de soluciones interdisciplinarias en el campo de los cultivos bajo cubierta mientras aprendo el uso de la tecnología y herramientas usadas para la Ingeniería de datos y el IoT. Son bienvenidas las correcciones y sugerencias.
+Este proyecto forma parte de una transición profesional hacia la **Ingeniería de Datos aplicada al sector AgTech**, combinando bases agronómicas y electromecánicas con arquitectura de sistemas distribuidos, procesamiento de series temporales y desarrollo de software en Python.
