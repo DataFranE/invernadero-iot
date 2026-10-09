@@ -3,10 +3,12 @@ SCRIPT DE INICIALIZACIÓN DE BASE DE DATOS DEL INVERNADERO IOT
 TimescaleDB / PostgreSQL
 */
 
+
 CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE; --Activación de timescaleDB en la instancia de PostrgresSQL
 
 
 -- Tabla relacional para separar los metadatos de los valores dinamicos
+
 CREATE TABLE IF NOT EXISTS dispositivos(
     dispositivo_id VARCHAR(50) PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL,
@@ -17,17 +19,18 @@ CREATE TABLE IF NOT EXISTS dispositivos(
 );
 
 
-
 -- Registro incial de dispositivo del MPV
 
 INSERT INTO dispositivos (dispositivo_id, nombre, ubicacion_nave, tipo_cultivo)
 VALUES ('GH_TOMATO_01', 'Nodo Principal Tomate Nave 1', 'Nave_A1', 'Solanum lycopersicum')
 ON CONFLICT (dispositivo_id) DO NOTHING; -- No acusa error si se reejecuta el comando
 
+
 -- Tabla de telemetría y validacion de calidad
 
 CREATE TABLE IF NOT EXISTS telemetria_sensores (
     fecha_hora TIMESTAMPTZ NOT NULL,
+    fecha_hora_ingesta TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     dispositivo_id VARCHAR(50) NOT NULL,
     estado VARCHAR(20) DEFAULT 'active',
     temperatura DOUBLE PRECISION,
@@ -51,6 +54,7 @@ SELECT create_hypertable(
     if_not_exists => TRUE
 );
 
+
 -- Indexación para eficientizar las lecturas las consultas por dashboard
 
 CREATE INDEX IF NOT EXISTS idx_telemetria_dispositivo_tiempo
@@ -66,6 +70,4 @@ ALTER TABLE telemetria_sensores SET (
 );
 
 SELECT add_compression_policy('telemetria_sensores', INTERVAL '7 days', if_not_exists => TRUE); -- Automatiza la compresión cada vez que un chunk supera los 7 dias
-
-
 

@@ -10,8 +10,9 @@ from datetime import datetime, timezone
 """
 Consumidor MQTT para la telemetría del Invernadero IoT.
 -Se suscribe a los tópicos MQTT del broker para recibir las lecturas enviadas por los sensores.
--Deserializar las cargas útiles JSON y procesar los eventos entrantes adaptandolos al esquema DDL de TimescaleDB (telemetríad de sensores.
--Inserta las metricas almacenadas por lotes (batch processing) y metadatos dinámicos JSONB.
+-Deserializa las cargas útiles JSON y procesar los eventos entrantes adaptándolos al esquema DDL de TimescaleDB.
+-Registra automáticamente nuevos dispositivos en la tabla 'dispositivos'.
+-Inserta las métricas almacenadas por lotes (Batching) y metadatos dinámicos JSONB.
 """
 #Lectura de variables de entorno y configuración del broker y base de datos.
 load_dotenv()
@@ -42,8 +43,9 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
-#Conexión a la base de datos.
+
 def get_db_connection():
+    """Establece conexión sincrónica con PostgreSQL/TimescaleDB usando psycopg3. """
     try:
         conn = psycopg.connect(
             host=DB_HOST,
@@ -57,8 +59,12 @@ def get_db_connection():
         logging.exception("Error al intentar conectar con TimescaleDB: %s", e)
         return None
 
-def sanitize_and_parse(payload: dict) -> tuple:
 
+def sanitize_and_parse(payload: dict) -> tuple:
+    """
+    Saneamiento y desacoplamiento de la carga útil JSON (Capa Anti-Corrupción / ACL).
+    Devuelve una tupla ordenada compatible con el esquema de 'telemetria_sensores'.
+    """
     sensor_id = payload.get("sensor_id")
     telemetry = payload.get("telemetry", {})
 
@@ -72,6 +78,8 @@ def sanitize_and_parse(payload: dict) -> tuple:
     except (ValueError, TypeError):
         origin_ts = datetime.now(timezone.utc)
 
+    ingested_at = datetime.now(timezone.utc)
+
     estado = payload.get("status","active")
 
     temp = telemetry.get("temperature")
@@ -79,15 +87,15 @@ def sanitize_and_parse(payload: dict) -> tuple:
     soil_hum = telemetry.get("soil_humidity")
     par_rad = telemetry.get("par_radiation")
 
-    datos_adicionales = {
-        "ingested_at_utc": datetime.now(timezone.utc).isoformat()
-    }
+    datos_adicionales = {}
     
     for key, value in telemetry.items():
         if key not in ["temperature", "relative_humidity", "soil_humidity", "par_radiation"]:
             datos_adicionales[key] = value
+
     return (
         origin_ts,
+        ingested_at,
         sensor_id,
         estado,
         temp,
@@ -97,23 +105,41 @@ def sanitize_and_parse(payload: dict) -> tuple:
         json.dumps(datos_adicionales)
     )
 
+
 def flush_buffer_to_db():
+    """Registra dispositivos desconocidos (Auto-Descubrimiento) y liquida el buffer en TimescaleDB. """
     global data_buffer, last_flush_time
 
     if not data_buffer:
         return
 
+    #Extrae IDs de dispositivos únicos en el lote.
+    dispositivos_unicos = list(set(record[2] for record in data_buffer))
+
+    query_dispositivo = """ 
+        INSERT INTO dispositivos (dispositivo_id, nombre, ubicacion_nave, tipo_cultivo)
+        VALUES (%s, %s, 'Nave_AutoDescubrimiento', 'Desconocido / Auto-Registrado')
+        ON CONFLICT (dispositivo_id) DO NOTHING;
+    """
+
     query = """
         INSERT INTO telemetria_sensores
-        (fecha_hora, dispositivo_id, estado, temperatura, humedad_relativa, humedad_suelo, radiacion_par, datos_adicionales)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s);
+        (fecha_hora, fecha_hora_ingesta, dispositivo_id, estado, temperatura, humedad_relativa, humedad_suelo, radiacion_par, datos_adicionales)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
     """
+
 
     conn = get_db_connection()
     if conn:
         try:
             with conn.cursor() as cur:
+                #Registro automático de nuevos dispositivos en la tabla relacional.
+                for dev_id in dispositivos_unicos:
+                    cur.execute(query_dispositivo, (dev_id, f"Nodo {dev_id}"))
+
+                #Inserción de métricas por lotes en la hypertabla de series temporales.
                 cur.executemany(query, data_buffer)
+
             conn.commit()
             logging.info("BATCH FLUSH: Insertados %d regsitros en TimescaleDB con éxito.", len(data_buffer))
             data_buffer.clear()
@@ -131,8 +157,6 @@ def on_connect(client, userdata, flags, rc, properties=None):
     if rc == 0:
         logging.info("Conectado al broker EMQX local(%s:%d)", BROKER, PORT)
         client.subscribe(TOPIC)
-#        logging.info("Suscripto al patrón de tópicos: %s", TOPIC)
-#        print("-"*50)
     else:
         logging.error("Error de conexión al broker MQTT. Código de retorno: %s", rc)
 
@@ -145,7 +169,7 @@ def on_message(client, userdata, msg):
 
         if record:
             data_buffer.append(record)
-            logging.info("Mensaje acumulado en buffer [%d/%d] - Nodo: %s", len(data_buffer), BATCH_SIZE, record[1])
+            logging.info("Mensaje acumulado en buffer [%d/%d] - Nodo: %s", len(data_buffer), BATCH_SIZE, record[2])
 
         current_time = time.time()
         if len(data_buffer) >= BATCH_SIZE or (current_time - last_flush_time) >= BATCH_TIMEOUT_SECONDS:
@@ -166,9 +190,7 @@ def main():
     client.on_message = on_message
 
     try:
-#        logging.info("Iniciando servicio Consumidor de Telemetría...")
         client.connect(BROKER, PORT, 60)
-#        print("... Presionar [Ctrl + C] para detener.")
         client.loop_forever()
     except KeyboardInterrupt:
         logging.info("Deteniendo el consumidor debido a una interrupción del usuario...")
